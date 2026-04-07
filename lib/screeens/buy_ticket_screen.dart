@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../blocs/ticket/ticket_bloc.dart';
 import '../models/ticket.dart';
 import '../services/ticket_service.dart';
 import '../theme/app_theme.dart';
@@ -12,23 +14,23 @@ class BuyTicketScreen extends StatefulWidget {
 }
 
 class _BuyTicketScreenState extends State<BuyTicketScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _eventCtrl   = TextEditingController();
-  final _venueCtrl   = TextEditingController();
-  final _cityCtrl    = TextEditingController();
-  final _seatCtrl    = TextEditingController();
+  final _formKey    = GlobalKey<FormState>();
+  final _eventCtrl  = TextEditingController();
+  final _venueCtrl  = TextEditingController();
+  final _cityCtrl   = TextEditingController();
+  final _seatCtrl   = TextEditingController();
   final _sectionCtrl = TextEditingController();
-  final _priceCtrl   = TextEditingController();
+  final _priceCtrl  = TextEditingController();
 
   TicketCategory _category = TicketCategory.concert;
   DateTime _eventDate = DateTime.now().add(const Duration(days: 30));
   bool _buying = false;
 
   static const Map<TicketCategory, String> _catEmojis = {
-    TicketCategory.concert:    '🎵',
+    TicketCategory.concert:    '🎸',
     TicketCategory.sport:      '⚽',
     TicketCategory.theater:    '🎭',
-    TicketCategory.festival:   '🎪',
+    TicketCategory.festival:   '🎛️',
     TicketCategory.cinema:     '🎬',
     TicketCategory.conference: '💼',
   };
@@ -64,11 +66,9 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
     if (picked != null) setState(() => _eventDate = picked);
   }
 
-  Future<void> _buy() async {
+  void _submit() {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _buying = true);
-
-    await Future.delayed(const Duration(milliseconds: 900)); // simulate network
 
     final id = TicketService.generateId();
     final ticket = Ticket(
@@ -85,12 +85,93 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
       imageEmoji: _catEmojis[_category] ?? '🎟️',
     );
 
-    await TicketService.instance.addTicket(ticket);
+    // BLoC Event auslösen
+    context.read<TicketBloc>().add(AddTicket(ticket));
+  }
 
-    if (mounted) {
-      HapticFeedback.lightImpact();
-      _showSuccess();
-    }
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<TicketBloc, TicketState>(
+      listener: (context, state) {
+        if (state is TicketPurchased) {
+          setState(() => _buying = false);
+          HapticFeedback.lightImpact();
+          _showSuccess();
+        } else if (state is TicketError) {
+          setState(() => _buying = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.message),
+              backgroundColor: AppTheme.error,
+            ),
+          );
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          title: const Text('Ticket kaufen'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
+            children: [
+              _sectionLabel('Kategorie'),
+              const SizedBox(height: 10),
+              _categorySelector(),
+              const SizedBox(height: 24),
+              _sectionLabel('Event-Daten'),
+              const SizedBox(height: 10),
+              _field(_eventCtrl, 'Eventname', Icons.event_rounded,
+                  hint: 'z.B. Coldplay – Music of the Spheres'),
+              const SizedBox(height: 12),
+              _field(_venueCtrl, 'Veranstaltungsort', Icons.location_on_rounded,
+                  hint: 'z.B. Allianz Arena'),
+              const SizedBox(height: 12),
+              _field(_cityCtrl, 'Stadt', Icons.location_city_rounded,
+                  hint: 'z.B. München'),
+              const SizedBox(height: 12),
+              _datePicker(),
+              const SizedBox(height: 24),
+              _sectionLabel('Sitzplatz'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                      child: _field(_seatCtrl, 'Platz', Icons.chair_rounded,
+                          hint: 'z.B. 14')),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: _field(
+                          _sectionCtrl, 'Bereich', Icons.grid_view_rounded,
+                          hint: 'z.B. Block C')),
+                ],
+              ),
+              const SizedBox(height: 24),
+              _sectionLabel('Preis'),
+              const SizedBox(height: 10),
+              _field(_priceCtrl, 'Preis (€)', Icons.euro_rounded,
+                  hint: '0.00',
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Bitte Preis eingeben';
+                    final d = double.tryParse(v.replaceAll(',', '.'));
+                    if (d == null || d < 0) return 'Ungültiger Preis';
+                    return null;
+                  }),
+              const SizedBox(height: 36),
+              _buyButton(),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showSuccess() {
@@ -123,8 +204,8 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context); // close sheet
-                  Navigator.pop(context, true); // return to home
+                  Navigator.pop(context);
+                  Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
@@ -146,82 +227,16 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: const Text('Ticket kaufen'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => Navigator.pop(context),
+  Widget _sectionLabel(String text) => Text(
+        text,
+        style: const TextStyle(
+          fontFamily: 'Outfit',
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: AppTheme.textMuted,
+          letterSpacing: 1.2,
         ),
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
-          children: [
-            _sectionLabel('Kategorie'),
-            const SizedBox(height: 10),
-            _categorySelector(),
-            const SizedBox(height: 24),
-            _sectionLabel('Event-Daten'),
-            const SizedBox(height: 10),
-            _field(_eventCtrl, 'Eventname', Icons.event_rounded,
-                hint: 'z.B. Coldplay – Music of the Spheres'),
-            const SizedBox(height: 12),
-            _field(_venueCtrl, 'Veranstaltungsort', Icons.location_on_rounded,
-                hint: 'z.B. Allianz Arena'),
-            const SizedBox(height: 12),
-            _field(_cityCtrl, 'Stadt', Icons.location_city_rounded,
-                hint: 'z.B. München'),
-            const SizedBox(height: 12),
-            _datePicker(),
-            const SizedBox(height: 24),
-            _sectionLabel('Sitzplatz'),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(child: _field(_seatCtrl, 'Platz', Icons.chair_rounded,
-                    hint: 'z.B. 14')),
-                const SizedBox(width: 12),
-                Expanded(child: _field(_sectionCtrl, 'Bereich', Icons.grid_view_rounded,
-                    hint: 'z.B. Block C')),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _sectionLabel('Preis'),
-            const SizedBox(height: 10),
-            _field(_priceCtrl, 'Preis (€)', Icons.euro_rounded,
-                hint: '0.00',
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                validator: (v) {
-                  if (v == null || v.isEmpty) return 'Bitte Preis eingeben';
-                  final d = double.tryParse(v.replaceAll(',', '.'));
-                  if (d == null || d < 0) return 'Ungültiger Preis';
-                  return null;
-                }),
-            const SizedBox(height: 36),
-            _buyButton(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontFamily: 'Outfit',
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: AppTheme.textMuted,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
+      );
 
   Widget _categorySelector() {
     return SizedBox(
@@ -237,7 +252,8 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
             onTap: () => setState(() => _category = cat),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
                 color: selected ? AppTheme.primary : AppTheme.surfaceLight,
                 borderRadius: BorderRadius.circular(14),
@@ -256,7 +272,9 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
                         fontFamily: 'Outfit',
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
-                        color: selected ? Colors.white : AppTheme.textSecondary,
+                        color: selected
+                            ? Colors.white
+                            : AppTheme.textSecondary,
                       )),
                 ],
               ),
@@ -285,8 +303,11 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
         hintText: hint,
         prefixIcon: Icon(icon, color: AppTheme.textMuted, size: 20),
         labelStyle: const TextStyle(
-            fontFamily: 'Outfit', color: AppTheme.textSecondary, fontSize: 14),
-        hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 14),
+            fontFamily: 'Outfit',
+            color: AppTheme.textSecondary,
+            fontSize: 14),
+        hintStyle:
+            const TextStyle(color: AppTheme.textMuted, fontSize: 14),
         filled: true,
         fillColor: AppTheme.surfaceLight,
         border: OutlineInputBorder(
@@ -299,7 +320,8 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+          borderSide:
+              const BorderSide(color: AppTheme.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -307,7 +329,8 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
         ),
       ),
       validator: validator ??
-          (v) => (v == null || v.trim().isEmpty) ? 'Pflichtfeld' : null,
+          (v) =>
+              (v == null || v.trim().isEmpty) ? 'Pflichtfeld' : null,
     );
   }
 
@@ -315,7 +338,8 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
     return GestureDetector(
       onTap: _pickDate,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
           color: AppTheme.surfaceLight,
           borderRadius: BorderRadius.circular(14),
@@ -376,7 +400,7 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: _buying ? null : _buy,
+          onTap: _buying ? null : _submit,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 18),
             child: Center(

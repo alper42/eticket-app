@@ -1,5 +1,5 @@
 name: eticket_app
-description: E-Ticket App – Kauf, Speicherung und Anzeige von Tickets
+description: E-Ticket App mit BLoC Pattern
 
 publish_to: 'none'
 version: 1.0.0+1
@@ -10,6 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_bloc: ^8.1.5
   shared_preferences: ^2.2.3
 
 dev_dependencies:

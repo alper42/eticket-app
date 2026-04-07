@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../blocs/ticket/ticket_bloc.dart';
 import '../models/ticket.dart';
-import '../services/ticket_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ticket_card.dart';
 import '../widgets/stat_chip.dart';
@@ -17,18 +18,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _init();
-  }
-
-  Future<void> _init() async {
-    await TicketService.instance.loadTickets();
-    if (mounted) setState(() => _loading = false);
   }
 
   @override
@@ -37,50 +31,72 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  void _openBuy() async {
-    final result = await Navigator.push<bool>(
+  void _openBuy() {
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const BuyTicketScreen()),
     );
-    if (result == true && mounted) setState(() {});
   }
 
-  void _openDetail(Ticket ticket) async {
-    final changed = await Navigator.push<bool>(
+  void _openDetail(Ticket ticket) {
+    Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => TicketDetailScreen(ticket: ticket)),
+      MaterialPageRoute(
+          builder: (_) => TicketDetailScreen(ticket: ticket)),
     );
-    if (changed == true && mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final service = TicketService.instance;
-    final active = service.activeTickets;
-    final past   = service.pastTickets;
-
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(),
-                  _buildStats(active, past),
-                  _buildTabBar(),
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildTicketList(active, emptyMsg: 'Keine aktiven Tickets.\nKauf dein erstes Ticket!'),
-                        _buildTicketList(past,   emptyMsg: 'Noch keine vergangenen Tickets.'),
-                      ],
-                    ),
+        child: BlocBuilder<TicketBloc, TicketState>(
+          builder: (context, state) {
+            if (state is TicketLoading || state is TicketInitial) {
+              return const Center(
+                child: CircularProgressIndicator(color: AppTheme.primary),
+              );
+            }
+
+            if (state is TicketError) {
+              return Center(
+                child: Text(state.message,
+                    style: const TextStyle(color: AppTheme.error)),
+              );
+            }
+
+            final loaded = state is TicketLoaded
+                ? state
+                : state is TicketPurchased
+                    ? TicketLoaded(state.tickets)
+                    : TicketLoaded(const []);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(),
+                _buildStats(loaded),
+                _buildTabBar(),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildTicketList(
+                        loaded.activeTickets,
+                        emptyMsg: 'Keine aktiven Tickets.\nKauf dein erstes Ticket!',
+                      ),
+                      _buildTicketList(
+                        loaded.pastTickets,
+                        emptyMsg: 'Noch keine vergangenen Tickets.',
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
       floatingActionButton: _buildFAB(),
     );
@@ -95,10 +111,8 @@ class _HomeScreenState extends State<HomeScreen>
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Meine Tickets',
-                style: Theme.of(context).textTheme.displayMedium,
-              ),
+              Text('Meine Tickets',
+                  style: Theme.of(context).textTheme.displayMedium),
               const SizedBox(height: 2),
               Text(
                 'Alle Events auf einen Blick',
@@ -124,29 +138,25 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildStats(List<Ticket> active, List<Ticket> past) {
-    final today = active.where((t) => t.isToday).length;
+  Widget _buildStats(TicketLoaded state) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
       child: Row(
         children: [
           StatChip(
-            label: 'Aktiv',
-            value: '${active.length}',
-            color: AppTheme.primary,
-          ),
+              label: 'Aktiv',
+              value: '${state.activeTickets.length}',
+              color: AppTheme.primary),
           const SizedBox(width: 10),
           StatChip(
-            label: 'Heute',
-            value: '$today',
-            color: AppTheme.accent,
-          ),
+              label: 'Heute',
+              value: '${state.todayCount}',
+              color: AppTheme.accent),
           const SizedBox(width: 10),
           StatChip(
-            label: 'Gesamt',
-            value: '${active.length + past.length}',
-            color: AppTheme.textMuted,
-          ),
+              label: 'Gesamt',
+              value: '${state.tickets.length}',
+              color: AppTheme.textMuted),
         ],
       ),
     );
@@ -185,7 +195,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildTicketList(List<Ticket> tickets, {required String emptyMsg}) {
+  Widget _buildTicketList(List<Ticket> tickets,
+      {required String emptyMsg}) {
     if (tickets.isEmpty) {
       return Center(
         child: Column(
