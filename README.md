@@ -20,3 +20,9 @@ Eine plattformübergreifende Mobile-App zur Verwaltung digitaler Event-Tickets, 
 
 ## Architektur
 Das Projekt folgt einer sauberen Schichtenarchitektur:
+lib/
+├── models/       # Datenmodelle
+├── blocs/        # State Management
+├── services/     # Business Logik
+├── screens/      # UI Screens
+└── widgets/      # Wiederverwendbare Komponenten
