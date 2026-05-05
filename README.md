@@ -19,10 +19,4 @@ Eine plattformübergreifende Mobile-App zur Verwaltung digitaler Event-Tickets, 
 | CustomPainter | QR-Code-Rendering |
 
 ## Architektur
-Das Projekt folgt einer sauberen Schichtenarchitektur:
-lib/
-├── models/       # Datenmodelle
-├── blocs/        # State Management
-├── services/     # Business Logik
-├── screens/      # UI Screens
-└── widgets/      # Wiederverwendbare Komponenten
+Das Projekt folgt einer sauberen Schichtenarchitektur mit den Bereichen **models** (Datenmodelle), **blocs** (State Management), **services** (Business Logik), **screens** (UI Screens) und **widgets** (Wiederverwendbare Komponenten).
